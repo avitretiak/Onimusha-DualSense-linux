@@ -72,10 +72,51 @@ static class PreparedWaves
                 effects.ParrySamples, effects.CutSamples, effects.SoundInfo,
                 effects.SoundEvents.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value)));
             if (!Files.Atomic(IndexPath, result)) throw new IOException("Cannot commit prepared waveform index");
+            WriteNativeCatalog(result);
             Console.WriteLine($"Prepared {waves.Count} sample registrations in {written.Count} shared WAV files.");
             return result;
         }
         finally { mutex.ReleaseMutex(); }
+    static void WriteNativeCatalog(Index index)
+    {
+        string path = Files.Data("native_catalog.bin"), temp = path + ".tmp";
+        using (var writer = new BinaryWriter(File.Create(temp)))
+        {
+            writer.Write("ONDS"u8); writer.Write(1);
+            writer.Write(index.Waves.Count);
+            foreach (var (key, wave) in index.Waves)
+            {
+                writer.Write(key); writer.Write(wave.File); writer.Write(wave.Length);
+            }
+            writer.Write(index.Events.Count);
+            foreach (var (eventId, value) in index.Events)
+            {
+                writer.Write(eventId);
+                var route = value.GetProperty("id").GetString() ?? "";
+                writer.Write(route);
+                writer.Write(value.GetProperty("family").GetString() ?? "");
+                writer.Write(value.GetProperty("source").GetString() ?? "");
+                WriteVariants(writer, index.Variants, route);
+                WriteVariants(writer, index.Variants, route + "_left");
+                WriteVariants(writer, index.Variants, route + "_right");
+            }
+            writer.Write(index.Available.Count);
+            foreach (var id in index.Available.Keys)
+            {
+                writer.Write(id);
+                WriteVariants(writer, index.Variants, id);
+            }
+        }
+        File.Move(temp, path, true);
+    }
+
+    static void WriteVariants(BinaryWriter writer, Dictionary<string, string[]> variants, string key)
+    {
+        if (!variants.TryGetValue(key, out var values)) { writer.Write(0); return; }
+        writer.Write(values.Length);
+        foreach (string value in values) writer.Write(value);
+    }
+
     }
     public static (SampleStore Samples, ExtendedEffects Effects) Load()
     {

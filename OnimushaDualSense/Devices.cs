@@ -289,6 +289,13 @@ sealed class HidRecovery : IDisposable
                 ScheduleRetry(now);
                 return false;
             }
+            catch (IOException e)
+            {
+                log($"DualSense output write failed: {e.Message}; retrying in {backoff:0.0}s.");
+                ReleaseFailedOutput();
+                ScheduleRetry(now);
+                return false;
+            }
         }
     }
 
@@ -318,6 +325,44 @@ sealed class HidRecovery : IDisposable
                 ScheduleRetry(now);
                 return false;
             }
+            catch (IOException e)
+            {
+                log($"Bluetooth HID haptics write failed: {e.Message}; retrying in {backoff:0.0}s.");
+                ReleaseFailedOutput();
+                ScheduleRetry(now);
+                return false;
+            }
+        }
+    }
+    bool EnsureOpen(double now)
+    {
+        if (output != null) return true;
+        if (now < nextOpen) return false;
+        IHidOutput candidate;
+        try { candidate = factory(); }
+        catch (Win32Exception e) { ReopenFailed(now, e); return false; }
+        catch (HidUnavailableException e) { ReopenFailed(now, e); return false; }
+        catch (IOException e) { ReopenFailed(now, e); return false; }
+        try
+        {
+            candidate.Send(Protocol.Report(audio: false));
+            output = candidate;
+            bluetoothHapticsInitialized = false;
+            backoff = .5;
+            log("DualSense HID output opened; both triggers released.");
+            return true;
+        }
+        catch (Win32Exception e)
+        {
+            DisposeFailed(candidate);
+            ReopenFailed(now, e);
+            return false;
+        }
+        catch (IOException e)
+        {
+            DisposeFailed(candidate);
+            ReopenFailed(now, e);
+            return false;
         }
     }
 
@@ -334,30 +379,6 @@ sealed class HidRecovery : IDisposable
         }
     }
 
-    bool EnsureOpen(double now)
-    {
-        if (output != null) return true;
-        if (now < nextOpen) return false;
-        IHidOutput candidate;
-        try { candidate = factory(); }
-        catch (Win32Exception e) { ReopenFailed(now, e); return false; }
-        catch (HidUnavailableException e) { ReopenFailed(now, e); return false; }
-        try
-        {
-            candidate.Send(Protocol.Report(audio: false));
-            output = candidate;
-            bluetoothHapticsInitialized = false;
-            backoff = .5;
-            log("DualSense HID output opened; both triggers released.");
-            return true;
-        }
-        catch (Win32Exception e)
-        {
-            DisposeFailed(candidate);
-            ReopenFailed(now, e);
-            return false;
-        }
-    }
 
     public void Release()
     {
@@ -366,6 +387,7 @@ sealed class HidRecovery : IDisposable
             if (output == null) return;
             try { output.Send(Protocol.Report(audio: false)); }
             catch (Win32Exception e) { log($"DualSense HID release failed; native error {e.NativeErrorCode}: {e.Message}"); }
+            catch (IOException e) { log($"DualSense output release failed: {e.Message}"); }
         }
     }
 
@@ -388,6 +410,7 @@ sealed class HidRecovery : IDisposable
         bluetoothHapticsInitialized = false;
         try { current.Send(Protocol.Report(audio: false)); }
         catch (Win32Exception e) { log($"DualSense HID release failed; native error {e.NativeErrorCode}: {e.Message}"); }
+        catch (IOException e) { log($"DualSense output release failed: {e.Message}"); }
         finally { DisposeFailed(current); }
     }
 
@@ -399,6 +422,7 @@ sealed class HidRecovery : IDisposable
         if (failed == null) return;
         try { failed.Send(Protocol.Report(audio: false)); }
         catch (Win32Exception e) { log($"DualSense HID release after failure failed; native error {e.NativeErrorCode}: {e.Message}"); }
+        catch (IOException e) { log($"DualSense output release after failure failed: {e.Message}"); }
         finally { failed.Dispose(); }
     }
 
@@ -406,6 +430,7 @@ sealed class HidRecovery : IDisposable
     {
         try { failed.Dispose(); }
         catch (Win32Exception e) { log($"DualSense HID failed-output dispose failed; native error {e.NativeErrorCode}: {e.Message}"); }
+        catch (IOException e) { log($"DualSense failed-output dispose failed: {e.Message}"); }
     }
 
     void ReopenFailed(double now, Exception e)

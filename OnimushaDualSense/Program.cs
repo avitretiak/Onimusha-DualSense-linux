@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace OnimushaDualSense;
 
 static class Program
@@ -13,28 +11,12 @@ static class Program
             AppHost.Initialize();
             switch (command)
             {
-                case "setup": Setup.Run(args); return 0;
-                case "uninstall": Setup.Uninstall(); return 0;
-                case "run": return Bridge.Run(args);
-                case "stop": File.WriteAllText(Files.Data("stop.request"), "stop"); return 0;
-                case "launch":
-                    var config = Configuration.Read();
-                    if (string.IsNullOrWhiteSpace(config.Game)) throw new InvalidOperationException("Run Setup.cmd first");
-                    bool autoLaunchGame = ShouldAutoLaunchGame(config, args);
-                    Files.EchoLogsToConsole = false;
-                    foreach (string line in LaunchInstructions(autoLaunchGame)) Console.WriteLine(line);
-                    if (autoLaunchGame)
-                    {
-                        Console.WriteLine("Starting Onimusha: Way of the Sword from Steam...");
-                        Process.Start(new ProcessStartInfo("steam://rungameid/2638890") { UseShellExecute = true });
-                    }
-                    return Bridge.Run(args);
+                case "prepare-assets": Setup.PrepareAssets(args); return 0;
                 case "prepare-waves": PreparedWaves.Prepare(args.Contains("--force")); return 0;
                 case "diagnose":
                     Console.WriteLine($"Onimusha DualSense 1.2.0 / {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
-                    Console.WriteLine("Game running: " + Files.GameRunning());
                     Console.WriteLine("DualSense HID devices: " + Hid.Find().Count);
-                    Console.WriteLine("Steam game: " + Setup.Discover()); return 0;
+                    Console.WriteLine("Asset source discovery: " + Setup.Discover()); return 0;
 #if DEVELOPER
                 case "inspect": Inspector.Launch(); return 0;
                 case "inspect-server": return Inspector.Run(!args.Contains("--no-open"));
@@ -50,7 +32,7 @@ static class Program
                     DefenseSounds.Prepare(Path.GetFullPath(args[1]), Path.GetFullPath(args[2])); return 0;
 #endif
                 default:
-                    Console.WriteLine("Onimusha DualSense 1.2.0\nCommands: setup, launch, run, stop, uninstall, diagnose, prepare-waves");
+                    Console.WriteLine("Onimusha DualSense 1.2.0\nCommands: prepare-assets [--game <folder>] [--pak-tool <exe>] [--decoder <exe>], prepare-waves [--force], diagnose");
                     return command == "help" ? 0 : 1;
             }
         }
@@ -61,19 +43,4 @@ static class Program
             return 1;
         }
     }
-
-    internal static bool ShouldAutoLaunchGame(Configuration config, string[] args) =>
-        config.AutoLaunchGame && !args.Contains("--no-game");
-
-    internal static string[] LaunchInstructions(bool autoLaunchGame) => autoLaunchGame
-        ? [
-            "The Onimusha DualSense MOD is running while this window is open.",
-            "To stop the MOD, close this window."
-        ]
-        : [
-            "The Onimusha DualSense MOD is running while this window is open.",
-            "To stop the MOD, close this window.",
-            "Automatic game launch is disabled.",
-            "Start Onimusha: Way of the Sword manually from Steam."
-        ];
 }

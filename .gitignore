@@ -1,33 +1,38 @@
+# Managed and native build output
 bin/
 obj/
+build/
 publish/
 publish-dev/
 publish-*/
 release/
 development/
-audit-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.pdb
 .vs/
 .dotnet/
 .dotnet-cli-home/
 *.user
 *.suo
-*.pdb
-data/
 
-# Local continuation work
+# Generated runtime assets and logs
+data/
+logs/
+*.log
+*.dmp
+*.tmp
+
+# Local diagnostics and tool state
 work/
 outputs/
-__pycache__/
-
-# Local development-only tools and continuation metadata
+diagnostics/
+audit-*/
 dev/
 .agents/
 .codex/
-AGENTS.md
-LOCAL_BUILD.md
-CURRENT_STATE.md
-STRUCTURE.md
-docs/
-tools/launcher-baseline.md
-tools/bootstrap-lua-test-runtime.ps1
-tools/run-lua-tests.ps1
+# Private generated documentation reports
+docs/*.html
+__pycache__/

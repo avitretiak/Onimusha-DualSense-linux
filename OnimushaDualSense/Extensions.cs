@@ -64,7 +64,7 @@ sealed class ExtendedEffects
         if (loadSound && File.Exists(Files.Data("sound_haptics.json")))
         {
             var manifest = Files.Read(Files.Data("sound_haptics.json"));
-            if (manifest["format"]?.GetValue<int>() != 2) throw new InvalidDataException("Run Setup.cmd to regenerate sound assets");
+            if (manifest["format"]?.GetValue<int>() != 2) throw new InvalidDataException("Developer assets are stale; run `dotnet run --project OnimushaDualSense -- prepare-assets` then `dotnet run --project OnimushaDualSense -- prepare-waves --force`");
             var sourceCache = new Dictionary<string, float[]>();
             var renderCache = new Dictionary<string, string>();
             foreach (var source in SoundCatalog.Entries)

@@ -7,10 +7,9 @@ namespace OnimushaDualSense;
 
 static class Setup
 {
-    const string Script = "onimusha_dualsense_bridge.lua";
     internal static IReadOnlyList<string> ManualGamePrompt { get; } =
     [
-        "The Onimusha game folder was not found automatically.",
+        "The game folder was not found automatically.",
         "Enter the path to the game folder that contains OnimushaWotS.exe.",
         "Do not enter the path to OnimushaWotS.exe itself.",
         @"Example: C:\Program Files (x86)\Steam\steamapps\common\OnimushaWotS"
@@ -27,13 +26,33 @@ static class Setup
     };
     public static void Exec(string exe, params string[] args)
     {
+        bool windowsTool = Path.GetExtension(exe).Equals(".exe", StringComparison.OrdinalIgnoreCase);
         var start = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true };
+        if (!OperatingSystem.IsWindows() && windowsTool)
+        {
+            string wine = Environment.GetEnvironmentVariable("WINE")?.Trim() ?? "wine";
+            if (wine.Length == 0) wine = "wine";
+            start = new ProcessStartInfo(wine) { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add(exe);
+        }
         foreach (string arg in args) start.ArgumentList.Add(arg);
-        using var process = Process.Start(start) ?? throw new IOException("Unable to start " + exe);
-        process.WaitForExit(); if (process.ExitCode != 0) throw new IOException($"{Path.GetFileName(exe)} failed ({process.ExitCode})");
+        try
+        {
+            using var process = Process.Start(start) ?? throw new IOException("Unable to start " + start.FileName);
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+                throw new IOException($"{Path.GetFileName(exe)} failed ({process.ExitCode}); verify the game path and tool arguments");
+        }
+        catch (System.ComponentModel.Win32Exception error) when (!OperatingSystem.IsWindows() && windowsTool)
+        {
+            throw new InvalidOperationException(
+                $"Wine is required to run {Path.GetFileName(exe)} on Linux/Proton. Install Wine or set WINE to its executable path, then retry.",
+                error);
+        }
     }
     public static string? Discover()
     {
+        if (!OperatingSystem.IsWindows()) return null;
         var libraries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (hive, key, name) in new[] { (Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath"), (Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath") })
         {
@@ -63,9 +82,9 @@ static class Setup
         string path = Files.Data("tools/" + Path.GetFileName(new Uri(tool.Url).AbsolutePath));
         if (!File.Exists(path) || Files.Sha(path) != tool.Hash)
         {
-            Console.WriteLine("Downloading official tool: " + tool.Url);
+            Console.WriteLine("Downloading official asset-extraction tool: " + tool.Url);
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Onimusha-DualSense-Setup/1.2.0");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Onimusha-DualSense-Asset-Generator/1.2.0");
             string temp = path + ".download";
             using (var response = client.GetAsync(tool.Url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
             {
@@ -78,7 +97,10 @@ static class Setup
         if (kind == "pak") return path;
         string folder = Files.Data("tools/vgmstream-r2117"); Directory.CreateDirectory(folder);
         ZipFile.ExtractToDirectory(path, folder, true); // BCL rejects directory traversal entries.
-        return Path.Combine(folder, "vgmstream-cli.exe");
+        string executable = Path.Combine(folder, "vgmstream-cli.exe");
+        if (!File.Exists(executable))
+            throw new InvalidDataException("The decoder archive did not contain vgmstream-cli.exe; remove the cached archive and retry.");
+        return executable;
     }
     internal static Dictionary<string, byte[]> Chunks(byte[] data)
     {
@@ -107,61 +129,27 @@ static class Setup
         }
         Files.Save(Files.Data("trigger_profiles.json"), new { source = "local game assets", profiles });
     }
-    public static void Install(string game)
+    public static void PrepareAssets(string[] args)
     {
-        Directory.CreateDirectory(Path.Combine(game, "reframework/data"));
-        string destination = Path.Combine(game, "reframework/autorun", Script); Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        string recordPath = Files.Data("install-record.json");
-        var previous = File.Exists(recordPath) ? Files.Read(recordPath) : null;
-        if (previous != null && !Path.GetFullPath(previous["game"]!.GetValue<string>()).Equals(game, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("This folder belongs to another game installation; uninstall first");
-        if (File.Exists(destination))
+        string? Option(string key)
         {
-            if (previous != null) { if (Files.Sha(destination) != previous["installed_sha256"]!.GetValue<string>()) throw new InvalidDataException("Installed Lua was modified; it was not replaced"); }
-            else if (!File.ReadAllText(destination).StartsWith("-- Onimusha DualSense bridge")) throw new InvalidDataException("A different file occupies the MOD filename");
+            int index = Array.IndexOf(args, key);
+            return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
         }
-        string source = Files.Bundled(Script);
-        var record = new { game, installed_sha256 = Files.Sha(source) };
-        string temp = destination + ".installing"; File.Copy(source, temp, true); File.Move(temp, destination, true);
-        Files.Save(recordPath, record);
-    }
-    public static void Uninstall()
-    {
-        if (Files.GameRunning() != false) throw new InvalidOperationException("Close Onimusha before uninstalling");
-        string recordPath = Files.Data("install-record.json"); var record = Files.Read(recordPath);
-        File.WriteAllText(Files.Data("stop.request"), "stop");
-        // Same named mutex as both the C# and Python editions.
-        for (int i = 0; ; i++)
-        {
-            using var mutex = new Mutex(false, @"Local\OnimushaDualSenseBridge", out bool created);
-            if (created) break;
-            if (i >= 30) throw new IOException("Companion is still running; installation was left unchanged");
-            Thread.Sleep(100);
-        }
-        string target = Path.Combine(record["game"]!.GetValue<string>(), "reframework/autorun", Script);
-        if (File.Exists(target))
-        {
-            if (Files.Sha(target) != record["installed_sha256"]!.GetValue<string>()) throw new InvalidDataException("Lua was modified; it was not removed");
-            File.Delete(target);
-        }
-        File.Delete(recordPath); Console.WriteLine("MOD Lua removed.");
-    }
-    public static void Run(string[] args)
-    {
-        string? Option(string key) { int i = Array.IndexOf(args, key); return i < 0 ? null : args[i + 1]; }
-        bool prepare = args.Contains("--prepare-only");
-        if (!prepare && Files.GameRunning() != false) throw new InvalidOperationException("Close Onimusha before setup");
-        var config = Configuration.Read();
-        string? game = Option("--game") ?? (string.IsNullOrWhiteSpace(config.Game) ? Discover() : config.Game);
+
+        string? game = Option("--game") ?? Discover();
         if (game == null)
         {
             foreach (string line in ManualGamePrompt) Console.WriteLine(line);
             Console.Write("Game folder path: ");
             game = Console.ReadLine()?.Trim().Trim('"');
         }
-        game = Path.GetFullPath(game ?? throw new InvalidOperationException("Game folder is required"));
-        if (!File.Exists(Path.Combine(game, "OnimushaWotS.exe"))) throw new InvalidDataException($"OnimushaWotS.exe was not found in '{game}'. Enter the game folder containing the executable, not the executable path.");
-        if (!prepare && !File.Exists(Path.Combine(game, "dinput8.dll"))) throw new InvalidOperationException("Install a compatible REFramework build first; see README");
-        string pak = Path.GetFullPath(Option("--pak-tool") ?? Download("pak")), decoder = Path.GetFullPath(Option("--decoder") ?? Download("decoder"));
+        game = Path.GetFullPath(game ?? throw new InvalidOperationException("A game folder is required to extract developer assets"));
+        if (!File.Exists(Path.Combine(game, "OnimushaWotS.exe")))
+            throw new InvalidDataException($"OnimushaWotS.exe was not found in '{game}'. Enter the game folder containing the executable, not the executable path.");
+
+        string pak = Path.GetFullPath(Option("--pak-tool") ?? Download("pak"));
+        string decoder = Path.GetFullPath(Option("--decoder") ?? Download("decoder"));
         string scratch = Files.Data("extract-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(scratch);
         try
         {
@@ -174,9 +162,8 @@ static class Setup
             DefenseSounds.Prepare(extracted, decoder);
         }
         finally { Directory.Delete(scratch, true); }
-        (config with { Game = game }).Save();
+
         PreparedWaves.Prepare();
-        if (!prepare) Install(game);
-        Console.WriteLine(prepare ? "Assets prepared. No game files changed." : "Setup complete. Use Start-Mod.cmd.");
+        Console.WriteLine("Developer asset generation complete. Catalog, waves, trigger profiles, and haptic metadata are ready in the developer data directory.");
     }
 }

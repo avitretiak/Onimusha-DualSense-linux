@@ -1,9 +1,20 @@
 THIRD-PARTY NOTICES
 
-Onimusha DualSense is licensed under the MIT License in LICENSE.
+Onimusha-DualSense-Linux is licensed under the MIT License in LICENSE.
 This file documents third-party components included with, downloaded by, or
 used to develop the mod. It does not cover the game, game audio, extracted
 assets, or generated haptic WAV files.
+
+UPSTREAM CREDITS
+
+This Proton/Linux fork is based on the original Onimusha DualSense mod by
+AInine9:
+https://github.com/AInine9/Onimusha-DualSense
+
+PR-3 adaptive-trigger work was authored by Maicol Battistini:
+https://github.com/AInine9/Onimusha-DualSense/commit/4e7db5d7249703bda01da8ae334502815e953772
+https://github.com/AInine9/Onimusha-DualSense/commit/d9859b91e933253035fc90f7b3366e3390dac6ea
+
 
 INCLUDED COMPONENT
 
