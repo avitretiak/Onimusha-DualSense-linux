@@ -71,16 +71,19 @@ jobs:
             --generator-directory "$RUNNER_TEMP/asset-generator" \
             --output-directory "$RUNNER_TEMP/release" \
             --archive "$RUNNER_TEMP/Onimusha-DualSense-Linux-${TAG}.zip" \
+            --nexus-source-archive "$RUNNER_TEMP/Onimusha-DualSense-Linux-Nexus-source-${TAG}.zip" \
+            --runtime-archive "$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-${TAG}.zip" \
             --version "$version"
           cp "$RUNNER_TEMP/Onimusha-DualSense-Linux-${TAG}.zip" "$RUNNER_TEMP/Onimusha-DualSense-Linux-latest.zip"
-          python3 - "$RUNNER_TEMP/release" "$RUNNER_TEMP/Onimusha-DualSense-Linux-${TAG}.zip" <<'PY'
+          cp "$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-${TAG}.zip" "$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-latest.zip"
+          python3 - "$RUNNER_TEMP/release" "$RUNNER_TEMP/Onimusha-DualSense-Linux-${TAG}.zip" "$RUNNER_TEMP/Onimusha-DualSense-Linux-Nexus-source-${TAG}.zip" "$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-${TAG}.zip" <<'PY'
           from pathlib import Path
           import sys
           import zipfile
 
           stage = Path(sys.argv[1])
-          archive = Path(sys.argv[2])
-          expected = {
+          full, nexus_source, runtimes = map(Path, sys.argv[2:])
+          expected_full = {
               "LICENSE",
               "RELEASE-METADATA.json",
               "THIRD_PARTY_NOTICES.txt",
@@ -90,15 +93,52 @@ jobs:
               "asset-generator/defense_haptics.json",
               "onimusha_hidrelay",
               "prepare-assets.sh",
+              "reframework/data/OnimushaDualSense.ini",
               "reframework/plugins/OnimushaDualSense.dll",
               "reframework/plugins/libportaudio64bit.dll",
               "start-hidrelay.sh",
               "steam-launch.sh",
           }
           staged = {path.relative_to(stage).as_posix() for path in stage.rglob("*") if path.is_file()}
-          assert staged == expected, sorted(staged ^ expected)
-          with zipfile.ZipFile(archive) as package:
-              assert package.namelist() == sorted(expected)
+          assert staged == expected_full, sorted(staged ^ expected_full)
+          with zipfile.ZipFile(full) as package:
+              assert package.namelist() == sorted(expected_full)
+
+          with zipfile.ZipFile(nexus_source) as package:
+              names = package.namelist()
+              prefix = "Onimusha-DualSense-Linux-source/"
+              assert names and all(name.startswith(prefix) for name in names)
+              assert prefix + "README.md" in names
+              assert prefix + "native/reframework/OnimushaDualSense.cpp" in names
+              assert prefix + "distribution/OnimushaDualSense.ini" in names
+              assert all(
+                  Path(name).suffix.lower() not in {
+                      ".a", ".bin", ".dll", ".dylib", ".exe", ".flac", ".lib", ".mp3",
+                      ".o", ".obj", ".pak", ".so", ".wav", ".zip", ".7z", ".bat",
+                      ".cmd", ".ps1", ".vbs", ".lnk", ".msi", ".sh",
+                  }
+                  for name in names
+              )
+              notice = package.read(prefix + "distribution/NEXUS-README.txt").decode()
+              assert "Onimusha-DualSense-Linux-runtimes-latest.zip" in notice
+              assert "Onimusha-DualSense-Linux-latest.zip" in notice
+              assert "Build prerequisites" in notice
+
+          expected_runtime = {
+              "LICENSE",
+              "RELEASE-METADATA.json",
+              "THIRD_PARTY_NOTICES.txt",
+              "asset-generator/OnimushaDualSense.deps.json",
+              "asset-generator/OnimushaDualSense.dll",
+              "asset-generator/OnimushaDualSense.runtimeconfig.json",
+              "asset-generator/defense_haptics.json",
+              "onimusha_hidrelay",
+              "reframework/data/OnimushaDualSense.ini",
+              "reframework/plugins/OnimushaDualSense.dll",
+              "reframework/plugins/libportaudio64bit.dll",
+          }
+          with zipfile.ZipFile(runtimes) as package:
+              assert package.namelist() == sorted(expected_runtime)
           assert not any(path.suffix.lower() in {".exe", ".cmd", ".bat", ".ps1"} for path in stage.rglob("*"))
           assert not (stage / "SHA256SUMS.txt").exists()
           PY
@@ -110,12 +150,15 @@ jobs:
         run: |
           archive="$RUNNER_TEMP/Onimusha-DualSense-Linux-${TAG}.zip"
           latest="$RUNNER_TEMP/Onimusha-DualSense-Linux-latest.zip"
+          nexus_source="$RUNNER_TEMP/Onimusha-DualSense-Linux-Nexus-source-${TAG}.zip"
+          runtimes="$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-${TAG}.zip"
+          runtimes_latest="$RUNNER_TEMP/Onimusha-DualSense-Linux-runtimes-latest.zip"
           gh release delete-asset "$TAG" "OnimushaDualSense-${TAG}.zip" --yes 2>/dev/null || true
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "Onimusha-DualSense-Linux ${TAG}"
-            gh release upload "$TAG" "$archive" "$latest" --clobber
+            gh release upload "$TAG" "$archive" "$latest" "$nexus_source" "$runtimes" "$runtimes_latest" --clobber
           else
-            gh release create "$TAG" "$archive" "$latest" \
+            gh release create "$TAG" "$archive" "$latest" "$nexus_source" "$runtimes" "$runtimes_latest" \
               --verify-tag \
               --title "Onimusha-DualSense-Linux ${TAG}" \
               --generate-notes

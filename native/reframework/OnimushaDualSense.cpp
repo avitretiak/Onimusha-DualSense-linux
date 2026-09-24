@@ -1,4 +1,5 @@
 #include "reframework_api.h"
+#include "HapticsSettings.h"
 
 #include <algorithm>
 #include <array>
@@ -11,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <filesystem>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -30,6 +32,9 @@
 #endif
 
 namespace {
+using onimusha::Feedback;
+using onimusha::HapticsSettings;
+
 constexpr unsigned short kHidRelayPort = 28766;
 #if defined(_WIN32)
 struct NativeWave { std::vector<float> samples; };
@@ -121,6 +126,7 @@ public:
         for (int i = 0; i < count; ++i) { if (read_string(input).empty()) return false; read_variants(input); }
         return static_cast<bool>(input);
     }
+    std::wstring settings_path() const { return data_dir + L"\\OnimushaDualSense.ini"; }
     const NativeRoute* route(std::uint32_t event) const
     {
         auto found = routes.find(event); return found == routes.end() ? nullptr : &found->second;
@@ -299,10 +305,7 @@ public:
 };
 PortAudioOutput audio_output;
 
-enum class Feedback : std::uint8_t {
-    FootLeft, FootRight, RunLeft, RunRight, Attack, Hit, Damage, Guard, Dodge, PerfectDodge, Land, Heal,
-    Soul, Pickup, LockOn, Power, Finisher, UiSelect, UiDecide, UiCancel, BowStart
-};
+HapticsSettings haptics_settings;
 
 std::mutex event_gate;
 std::vector<Feedback> pending_events;
@@ -499,7 +502,7 @@ void trigger_payload(std::array<std::uint8_t, 64>& report, std::size_t offset, i
     std::uint16_t mask = 0;
     std::uint32_t packed = 0;
     for (std::size_t i = 0; i < powers.size(); ++i) {
-        auto strength = static_cast<unsigned>(std::min(8.0f, powers[i] * 8.0f + .5f));
+        auto strength = static_cast<unsigned>(std::min(8.0f, powers[i] * haptics_settings.trigger_gain(profile) * 8.0f + .5f));
         if (strength > 0) {
             mask |= static_cast<std::uint16_t>(1u << i);
             packed |= static_cast<std::uint32_t>(strength - 1) << (i * 3);
@@ -798,14 +801,15 @@ bool source_matches(const NativeRoute& route, void* info)
 
 int sound_request(int argc, void** argv, REFrameworkTypeDefinitionHandle*, unsigned long long)
 {
-    if (!native_catalog_loaded || argc < 2 || argv[1] == nullptr) return 0;
+    if (!haptics_settings.enabled || !haptics_settings.sound_haptics || !native_catalog_loaded || argc < 2 || argv[1] == nullptr) return 0;
     bool ok = false; auto event = invoke_integer(argv[1], "get_EventId", ok);
     if (!ok) return 0;
     auto route = native_catalog.route(static_cast<std::uint32_t>(event));
     if (route == nullptr || !source_matches(*route, argv[1])) return 0;
     const bool right = route->family == "footsteps" ? (sound_side = !sound_side) : false;
     auto sample = native_catalog.sample_for(*route, right);
-    if (!sample.empty()) wave_mixer.play(native_catalog.wave(sample));
+    const float gain = haptics_settings.master_strength * haptics_settings.sound_gain(route->family);
+    if (!sample.empty() && gain > 0) wave_mixer.play(native_catalog.wave(sample), gain);
     return 0;
 }
 #endif
@@ -1002,6 +1006,13 @@ void on_present()
         native_catalog_loaded = native_catalog.load();
         functions->log_info("OnimushaDualSense native waveform catalog %s",
             native_catalog_loaded ? "ready" : "absent");
+        std::ifstream settings_input{std::filesystem::path(native_catalog.settings_path())};
+        if (settings_input) {
+            haptics_settings = onimusha::ReadHapticsSettings(settings_input);
+            functions->log_info("OnimushaDualSense INI settings loaded");
+        } else {
+            functions->log_info("OnimushaDualSense INI not found; using built-in defaults");
+        }
         std::string audio_error;
         if (!audio_output.open(audio_error))
             functions->log_warn("OnimushaDualSense PCM haptic output unavailable: %s", audio_error.c_str());
@@ -1026,6 +1037,8 @@ void on_present()
         }
     }
     if (presents % 60 == 0) refresh_player();
+    // Adaptive-trigger callbacks report this frame's profile; clear stale state first.
+    set_trigger_profile(-1);
     if (auto manager = sdk_data->functions->get_managed_singleton("app.AdaptiveTriggerManager")) {
         invoke_void(manager, "checkOnAdaptiveTrigger");
     }
@@ -1040,16 +1053,21 @@ void on_present()
     } else {
         have_previous_action_state = false;
     }
-    const int profile = current_trigger_profile();
+    const int profile = haptics_settings.enabled && haptics_settings.adaptive_triggers ? current_trigger_profile() : -1;
     for (auto event : take_feedback()) {
+        if (!haptics_settings.enabled || !haptics_settings.event_haptics) continue;
+        const float gain = haptics_settings.master_strength * haptics_settings.event_gain(event);
+        if (gain <= 0) continue;
         std::string error;
         std::string sample = native_catalog_loaded ? native_catalog.sample_for("ext:" + std::string(feedback_name(event))) : "";
         if (audio_output.ready() && !sample.empty()) {
-            if (wave_mixer.play(native_catalog.wave(sample))) continue;
+            if (wave_mixer.play(native_catalog.wave(sample), gain)) continue;
             functions->log_warn("OnimushaDualSense waveform unavailable for event=%s; using pulse fallback",
                 feedback_name(event));
         }
         auto pulse = pulse_for(event);
+        pulse.low = static_cast<std::uint8_t>(std::lround(pulse.low * gain));
+        pulse.high = static_cast<std::uint8_t>(std::lround(pulse.high * gain));
         bool sent = output.play(pulse, profile, error);
         if (!sent && hid_relay_output.open(error)) sent = hid_relay_output.play(pulse, profile, error);
         if (sent) functions->log_info("OnimushaDualSense native event=%s profile=%d",

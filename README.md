@@ -98,19 +98,38 @@ Stop that manually started instance after the game exits:
 sh ./start-hidrelay.sh stop
 ```
 
+
+## Haptic settings
+
+Edit `reframework/data/OnimushaDualSense.ini`; settings load when the game
+starts, so restart after changes. Strength values are linear multipliers from
+`0.0` (off) to `1.0` (full).
+
+- `General.MasterStrength` scales all haptics. `General.Enabled=false` disables
+  the mod's outputs.
+- `General.Footsteps` and `General.RunningFootsteps` scale walking and running
+  feedback; both default to `0.5`. `EventHaptics` provides an additional
+  per-event multiplier for each action.
+- `SoundHaptics` scales sound-derived effects by source family.
+
+The prepackaged INI documents every key and default.
+
 ## Update
 
 1. Close the game. The Steam wrapper stops the helper instance it started.
 2. Save a copy of the current `reframework/plugins/` files and
-   `reframework/data/` directory.
-3. Extract the new package directly into the game directory.
-4. Regenerate matching local assets once:
+   `reframework/data/` directory for rollback.
+3. Back up a customized `reframework/data/OnimushaDualSense.ini` separately.
+4. Extract the new package directly into the game directory.
+5. Restore your customized INI if you backed it up; otherwise keep the new
+   release's defaults.
+6. Regenerate matching local assets once:
 
    ```sh
    sh ./prepare-assets.sh .
    ```
 
-5. Keep the Steam launch option
+7. Keep the Steam launch option
    `sh ./steam-launch.sh %command%` and launch normally.
 
 Keep generated wave data from one release together with its matching native
@@ -126,6 +145,7 @@ sh ./start-hidrelay.sh stop 2>/dev/null || true
 rm -f \
   reframework/plugins/OnimushaDualSense.dll \
   reframework/plugins/libportaudio64bit.dll \
+  reframework/data/OnimushaDualSense.ini \
   reframework/data/onimusha_dualsense_native.bin \
   onimusha_hidrelay \
   prepare-assets.sh \
@@ -168,13 +188,14 @@ A DualSense trigger can carry only one active trigger mode at a time. Rift vibra
 
 The native plug-in reports output failures and event names through the REFramework log. The optional helper reports its own errors to the terminal that started it.
 
-## Package layout
+## GitHub install package
 
-A Nexus-compatible package should contain ordinary files and directories, not a
-required installer:
+The full GitHub ZIP includes the native plug-in, runtime dependencies, asset
+generator, helper, launch scripts, default INI, licenses, and metadata:
 
 ```text
 reframework/
+  data/OnimushaDualSense.ini
   plugins/
     OnimushaDualSense.dll
     libportaudio64bit.dll
@@ -184,23 +205,37 @@ asset-generator/
   OnimushaDualSense.runtimeconfig.json
   defense_haptics.json
 onimusha_hidrelay                  (optional fallback)
-prepare-assets.sh                  (one-time setup)
-start-hidrelay.sh                  (helper lifecycle)
-steam-launch.sh                    (Steam %command% wrapper)
+prepare-assets.sh
+start-hidrelay.sh
+steam-launch.sh
 LICENSE
 THIRD_PARTY_NOTICES.txt
 RELEASE-METADATA.json
 ```
 
-Extract the archive directly into the game directory, run
+Extract this ZIP directly into the game directory, run
 `sh ./prepare-assets.sh .` once, then set Steam launch options to
-`sh ./steam-launch.sh %command%`. The package must not contain private
-absolute paths, game audio sources, generated assets, logs, backups, or
-developer-only build outputs. If a distribution site strips executable bits,
-invoke the shell scripts explicitly with `sh`.
+`sh ./steam-launch.sh %command%`.
+
+## Nexus source and runtime packages
+
+`Onimusha-DualSense-Linux-Nexus-source-vX.Y.Z.zip` contains tracked source,
+documentation, and configuration, excluding compiled binaries and shell
+scripts. It is not the install package.
+
+`Onimusha-DualSense-Linux-runtimes-vX.Y.Z.zip` contains the compiled runtime
+files and default INI, but no source or shell scripts. The Nexus source
+instructions link to this GitHub asset and the full install ZIP. The runtime
+package can be extracted into the game folder; the full ZIP is the simplest
+install because it includes asset-generation and Steam launch scripts.
+
 ## Maintainer release
 
-Push a semantic version tag such as `v1.2.0`. GitHub Actions builds the Windows plug-in, Linux helper, and asset generator, assembles one slim `Onimusha-DualSense-Linux-vX.Y.Z.zip`, validates its 13-file contract, and attaches it to the GitHub release. Use that same ZIP for Nexus Mods. Generated game assets are never included; release notes should state the compatibility baseline and source commit.
+Push a semantic version tag such as `v1.3.0`. GitHub Actions builds the Windows
+plug-in, Linux helper, and asset generator, then publishes the full versioned
+and `latest` install ZIPs, versioned and `latest` runtime-only ZIPs, and the
+Nexus source ZIP. Generated game assets are never included. Release notes
+should state the compatibility baseline and source commit.
 
 ## Development
 
