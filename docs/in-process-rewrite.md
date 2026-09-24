@@ -38,7 +38,7 @@ The native plug-in is the canonical product. The managed developer project must 
 ## Runtime flow
 
 1. REFramework loads `OnimushaDualSense.dll` from `reframework/plugins/`.
-2. On the first present callback, the plug-in locates `reframework/data/onimusha_dualsense_native.bin`, validates its version, and maps the generated wave catalog.
+2. On the first present callback, the plug-in locates `reframework/data/onimusha_dualsense_native.bin`, validates its version, and maps the generated wave catalog and Profile 0's ten bow-resistance strengths.
 3. The plug-in installs hooks for lifecycle/player state, combat, movement, UI, sound requests, and adaptive triggers. Hooks only enqueue feedback or update trigger state; they do not synthesize controller input.
 4. For sound events, the catalog validates the event and source object before selecting a generated wave. The mixer uses the DualSense four-channel audio endpoint when available.
 5. For action/UI events, the mixer is preferred. If PCM output is unavailable, the plug-in emits a report through direct Windows HID. If that output cannot open under Proton, it sends the same report to the optional Linux helper. The helper is passive and does not choose effects.

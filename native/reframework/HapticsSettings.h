@@ -31,9 +31,23 @@ struct HapticsSettings {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
     bool adaptive_triggers = true;
+    bool bow_enabled = true;
+    bool rift_enabled = true;
+    bool gauntlet_enabled = true;
+    bool soul_enabled = true;
     float trigger_strength = 1;
     float rift_strength = 1;
     float soul_strength = 1;
+
+    bool trigger_profile_enabled(int profile) const noexcept {
+        switch (profile) {
+        case 0: return bow_enabled;
+        case 1: return rift_enabled;
+        case 2: return gauntlet_enabled;
+        case 3: return soul_enabled;
+        default: return false;
+        }
+    }
 
     float event_gain(Feedback event) const noexcept {
         const float walking = event == Feedback::FootLeft || event == Feedback::FootRight ? footsteps :
@@ -136,6 +150,10 @@ inline HapticsSettings ReadHapticsSettings(std::istream& input) {
                 if (key == name) detail::strength(value, settings.event_strength[static_cast<std::size_t>(event)]);
         } else if (section == "adaptivetriggers") {
             if (key == "enabled") detail::toggle(value, settings.adaptive_triggers);
+            else if (key == "bowenabled") detail::toggle(value, settings.bow_enabled);
+            else if (key == "riftenabled") detail::toggle(value, settings.rift_enabled);
+            else if (key == "gauntletenabled") detail::toggle(value, settings.gauntlet_enabled);
+            else if (key == "soulenabled") detail::toggle(value, settings.soul_enabled);
             else if (key == "strength") detail::strength(value, settings.trigger_strength);
             else if (key == "riftstrength") detail::strength(value, settings.rift_strength);
             else if (key == "soulstrength") detail::strength(value, settings.soul_strength);

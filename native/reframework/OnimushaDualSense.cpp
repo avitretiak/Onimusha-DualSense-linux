@@ -37,6 +37,7 @@ using onimusha::HapticsSettings;
 
 constexpr unsigned short kHidRelayPort = 28766;
 #if defined(_WIN32)
+std::array<float, 10> bow_resistance{};
 struct NativeWave { std::vector<float> samples; };
 
 struct NativeRoute {
@@ -99,15 +100,16 @@ public:
         path.resize(slash); slash = path.find_last_of(L"\\/");
         if (slash == std::wstring::npos) return false;
         data_dir = path.substr(0, slash) + L"\\data";
-        // ONDS v1: magic[4], version u32, then file_count and
+        // ONDS v2: magic[4], version u32, then file_count and
         // (id, wave_filename, source_length) records; route_count and
         // (event_id, id, family, source, variants, left, right) records;
-        // finally catalog_count and (id, variants) records. Strings use
-        // unsigned-LEB128 byte lengths; variant lists use i32 counts.
+        // then catalog_count and (id, variants) records followed by profile
+        // 0's ten binary32 resistance strengths. Strings use unsigned-LEB128
+        // lengths; variant lists use i32 counts.
         std::ifstream input((data_dir + L"\\onimusha_dualsense_native.bin").c_str(), std::ios::binary);
         char magic[4]{}; std::int32_t version = 0, count = 0;
         if (!input.read(magic, 4) || std::memcmp(magic, "ONDS", 4) != 0 ||
-            !input.read(reinterpret_cast<char*>(&version), 4) || version != 1 ||
+            !input.read(reinterpret_cast<char*>(&version), 4) || version != 2 ||
             !input.read(reinterpret_cast<char*>(&count), 4) || count < 0 || count > 100000) return false;
         for (int i = 0; i < count; ++i) {
             std::string id = read_string(input), file = read_string(input); std::int32_t length = 0;
@@ -124,6 +126,12 @@ public:
         }
         if (!input.read(reinterpret_cast<char*>(&count), 4) || count < 0 || count > 100000) return false;
         for (int i = 0; i < count; ++i) { if (read_string(input).empty()) return false; read_variants(input); }
+        std::array<float, 10> profile{};
+        for (float& power : profile) {
+            if (!input.read(reinterpret_cast<char*>(&power), sizeof power) ||
+                !std::isfinite(power) || power < 0.0f || power > 1.0f) return false;
+        }
+        bow_resistance = profile;
         return static_cast<bool>(input);
     }
     std::wstring settings_path() const { return data_dir + L"\\OnimushaDualSense.ini"; }
@@ -490,8 +498,9 @@ Pulse pulse_for(Feedback event)
 void trigger_payload(std::array<std::uint8_t, 64>& report, std::size_t offset, int profile)
 {
     report[offset] = 5;
-    if (profile < 0) return;
+    if (profile < 0 || !haptics_settings.trigger_profile_enabled(profile)) return;
     std::array<float, 10> powers{};
+    if (profile == 0) powers = bow_resistance;
     // Preserve the original PR trigger modes: profile 0 is resistance;
     // profiles 1-3 are positional trigger vibration.
     std::uint8_t mode = 0x21;
@@ -508,6 +517,7 @@ void trigger_payload(std::array<std::uint8_t, 64>& report, std::size_t offset, i
             packed |= static_cast<std::uint32_t>(strength - 1) << (i * 3);
         }
     }
+    if (mask == 0) return;
     report[offset] = mode;
     std::memcpy(report.data() + offset + 1, &mask, sizeof mask);
     std::memcpy(report.data() + offset + 3, &packed, sizeof packed);
@@ -518,7 +528,7 @@ std::array<std::uint8_t, 64> make_report(std::uint8_t low, std::uint8_t high, in
     std::array<std::uint8_t, 64> report{};
     report[0] = 2; report[1] = 0x0c; report[3] = low; report[4] = high;
     trigger_payload(report, 11, profile == 0 ? profile : -1);
-    trigger_payload(report, 22, profile == 1 || profile == 3 ? profile : -1);
+    trigger_payload(report, 22, profile >= 1 && profile <= 3 ? profile : -1);
     return report;
 }
 
@@ -923,7 +933,7 @@ int adaptive_trigger(int argc, void** argv, REFrameworkTypeDefinitionHandle*, un
     auto value = reinterpret_cast<std::uintptr_t>(argv[2]);
     functions->log_info("OnimushaDualSense adaptive trigger callback argc=%d value=%llu",
         argc, static_cast<unsigned long long>(value));
-    if (value == 0 || value == 1) set_trigger_profile(static_cast<int>(value));
+    if (value <= 3) set_trigger_profile(static_cast<int>(value));
     return 0;
 }
 

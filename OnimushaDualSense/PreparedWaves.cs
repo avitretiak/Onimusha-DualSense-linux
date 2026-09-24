@@ -21,7 +21,7 @@ static class PreparedWaves
     internal static string Fingerprint()
     {
         string text = "float32-wav-v1|" + Files.Sha(typeof(PreparedWaves).Assembly.Location);
-        foreach (string name in new[] { Files.Data("sound_haptics.json"), Files.Bundled("defense_haptics.json") })
+        foreach (string name in new[] { Files.Data("sound_haptics.json"), Files.Data("trigger_profiles.json"), Files.Bundled("defense_haptics.json") })
             text += "|" + Path.GetFileName(name) + ":" + (File.Exists(name) ? Files.Sha(name) : "absent");
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
@@ -80,9 +80,13 @@ static class PreparedWaves
     static void WriteNativeCatalog(Index index)
     {
         string path = Files.Data("native_catalog.bin"), temp = path + ".tmp";
+        var profile = Files.Read(Files.Data("trigger_profiles.json"))["profiles"]!.AsArray()
+            .Single(p => p!["_Type"]!.GetValue<int>() == 0)!;
+        var powers = profile["_PowerList"]!.AsArray();
+        if (powers.Count != 10) throw new InvalidDataException("Expected ten bow trigger strengths");
         using (var writer = new BinaryWriter(File.Create(temp)))
         {
-            writer.Write("ONDS"u8); writer.Write(1);
+            writer.Write("ONDS"u8); writer.Write(2);
             writer.Write(index.Waves.Count);
             foreach (var (key, wave) in index.Waves)
             {
@@ -106,6 +110,7 @@ static class PreparedWaves
                 writer.Write(id);
                 WriteVariants(writer, index.Variants, id);
             }
+            foreach (var power in powers) writer.Write(power!.GetValue<float>());
         }
         File.Move(temp, path, true);
     }
