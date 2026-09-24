@@ -1,6 +1,6 @@
 # Onimusha-DualSense-Linux
 
-An unofficial DualSense haptics mod for the PC release of *Onimusha: Way of the Sword*. Download the latest Linux + Proton package from [GitHub](https://github.com/avitretiak/Onimusha-DualSense-linux/releases/latest/download/Onimusha-DualSense-Linux-latest.zip).
+An unofficial DualSense haptics mod for the PC release of *Onimusha: Way of the Sword*. Download the latest Linux + Proton package from [GitHub Releases](https://github.com/avitretiak/Onimusha-DualSense-linux/releases/latest).
 
 The mod provides action, UI, sound-derived, and adaptive-trigger feedback. It is an approximation, not a reproduction of the PS5 implementation or the game's official effects.
 
@@ -217,25 +217,14 @@ Extract this ZIP directly into the game directory, run
 `sh ./prepare-assets.sh .` once, then set Steam launch options to
 `sh ./steam-launch.sh %command%`.
 
-## Nexus source and runtime packages
-
-`Onimusha-DualSense-Linux-Nexus-source-vX.Y.Z.zip` contains tracked source,
-documentation, and configuration, excluding compiled binaries and shell
-scripts. It is not the install package.
-
-`Onimusha-DualSense-Linux-runtimes-vX.Y.Z.zip` contains the compiled runtime
-files and default INI, but no source or shell scripts. The Nexus source
-instructions link to this GitHub asset and the full install ZIP. The runtime
-package can be extracted into the game folder; the full ZIP is the simplest
-install because it includes asset-generation and Steam launch scripts.
 
 ## Maintainer release
 
-Push a semantic version tag such as `v1.3.0`. GitHub Actions builds the Windows
-plug-in, Linux helper, and asset generator, then publishes the full versioned
-and `latest` install ZIPs, versioned and `latest` runtime-only ZIPs, and the
-Nexus source ZIP. Generated game assets are never included. Release notes
-should state the compatibility baseline and source commit.
+Push a semantic version tag such as `v1.3.2`. GitHub Actions builds the Windows
+plug-in, Linux helper, and asset generator, then publishes one versioned ZIP:
+`Onimusha-DualSense-Linux-vX.Y.Z.zip`. Generated game assets are never
+included. Release notes should state the compatibility baseline and source
+commit.
 
 ## Development
 
@@ -244,7 +233,6 @@ See [docs/in-process-rewrite.md](docs/in-process-rewrite.md) for the source boun
 ## Credits
 
 - Original Windows mod and upstream project: [AInine9 / Onimusha-DualSense](https://github.com/AInine9/Onimusha-DualSense).
-- PR-3 adaptive-trigger work: Maicol Battistini, in [the upstream trigger-protocol commit](https://github.com/AInine9/Onimusha-DualSense/commit/4e7db5d7249703bda01da8ae334502815e953772) and [the gameplay-effects commit](https://github.com/AInine9/Onimusha-DualSense/commit/d9859b91e933253035fc90f7b3366e3390dac6ea).
 - REFramework, PortAudio, and setup-tool licenses are listed in [THIRD_PARTY_NOTICES.txt](distribution/THIRD_PARTY_NOTICES.txt).
 
 ## Legal
